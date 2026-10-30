@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Deployment marker and future least-privilege container for the Apex learning project.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Apex Learning User</label>
+</PermissionSet>

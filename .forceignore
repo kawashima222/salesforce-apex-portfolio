@@ -1,0 +1,12 @@
+# Local project files that aren't Salesforce metadata
+**/.git/**
+**/.sf/**
+**/.sfdx/**
+**/node_modules/**
+evidence/**
+GOAL_SPEC.md
+LEARNING_PROGRESS.md
+PLAN.md
+README.md
+**/jsconfig.json
+**/.eslintrc.json

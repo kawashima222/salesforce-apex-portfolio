@@ -1,0 +1,29 @@
+# Salesforce CLI local state and credentials
+.sf/
+.sfdx/
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+auth/
+
+# Local editor and operating-system files
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Optional local tooling output
+node_modules/
+coverage/
+.tmp/
+*.log
+
+# Generated test and deployment results that have not been sanitized
+test-results/
+deploy-results/

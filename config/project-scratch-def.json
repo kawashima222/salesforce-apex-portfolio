@@ -1,0 +1,15 @@
+{
+  "orgName": "Apex Portfolio Scratch Org",
+  "edition": "Developer",
+  "objectSettings": {
+    "account": {
+      "sharingModel": "private"
+    },
+    "case": {
+      "sharingModel": "private"
+    },
+    "opportunity": {
+      "sharingModel": "private"
+    }
+  }
+}
