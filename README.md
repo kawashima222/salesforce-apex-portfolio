@@ -1,16 +1,12 @@
 # Salesforce Apex Learning Portfolio
 
-Salesforceの運用保守経験を土台に、Apexを自分で設計・実装・テスト・改善し、その判断理由まで説明できることを示す学習ポートフォリオです。
+Salesforceの運用保守経験を土台に、実務を想定したApex開発を学習するポートフォリオです。
 
-単にコードを動かすだけではなく、次の観点を各チェックポイントで確認しています。
+Apex Recipesを参照教材として、練習要件の設計・実装・テスト・レビュー指摘への修正を自身で行っています。AIは仕様調査・レビュー・ドキュメント整理の支援に利用しています。
 
-- Salesforceのガバナ制限を考慮した一括処理
-- CRUD、FLS、レコード共有を考慮したセキュリティ設計
-- 正常系・異常系・境界値を具体的に証明するApexテスト
-- Trigger、Handler、Service、Flowの責務分離
-- 入力不変性、例外、部分成功、ロールバック範囲の明文化
-- スクラッチ組織へのデプロイ、関連テスト、静的解析の証拠保存
-- 設計案と不採用案の比較、および判断理由の記録
+- 完了：Collection／SOQL／DML／Trigger／Apex Test
+- 進行中：CP6 Security Recipes
+- 主な検証：200件一括処理、USER_MODE、CRUD・FLS・共有、部分成功、ロールバック、Flow連携、スクラッチ組織への再デプロイ
 
 ## 現在の進捗
 
@@ -22,16 +18,18 @@ Salesforceの運用保守経験を土台に、Apexを自分で設計・実装・
 | CP3 | DML Recipes | 完了 | USER_MODE一括insert、全件成功・部分成功、入力別結果、入力不変性 |
 | CP4 | Trigger Recipes | 完了 | 共通TriggerHandler、Caseエスカレーション、Flow再入、Task一括作成 |
 | CP5 | Apexテスト | 完了 | CaseIndexServiceのテストを15件へ再設計し、独立性と具体的Assertを強化 |
-| CP6 | Security Recipes | 進行中 | Accountの安全な参照・更新、CRUD・FLS・共有の正負テストを設計・実装中 |
+| CP6 | Security Recipes | 進行中 | Account検索を実装・静的レビュー済み。更新処理は設計済み・未実装 |
 | CP7〜CP9 | Invocable／非同期／REST・Callout | 未着手 | CP6完了後に順番に実施 |
 
-進捗は固定の全体期限ではなく、各CPの完了条件に基づいて管理しています。
+CP6のQuery側は12テストを作成済みで、スクラッチ組織での実行確認待ちです。進捗は各CPの完了条件に基づいて管理しています。
 
 ## 代表的な実装
 
 ### CaseIndexService
 
 メモリ上のCaseを検証し、未完了かつAccountに関連付くCaseだけを`Map<Id, List<Case>>`へ分類します。
+
+[実装](force-app/main/default/classes/CaseIndexService.cls) · [テスト](force-app/main/default/classes/CaseIndexService_Tests.cls) · [テスト詳細設計](design/CP5_APEX_TESTS_DESIGN.md) · [検証結果](evidence/README.md)
 
 - null入力、空List、List内nullを安全に処理
 - AccountIdなし、Statusなし、Closedを除外
@@ -45,6 +43,8 @@ CP5では、既存7テストを目的別の15テストへ再設計しました�
 
 指定されたAccount IdとStatusに一致するCaseを1回のSOQLで取得します。
 
+[実装](force-app/main/default/classes/CaseSelector.cls) · [テスト](force-app/main/default/classes/CaseSelector_Tests.cls) · [検証結果](evidence/README.md)
+
 - `WITH USER_MODE`によるCRUD・FLS・共有の適用
 - null・空・Set内null／空白を処理
 - 呼出元のSetを変更しない
@@ -57,6 +57,8 @@ CP5では、既存7テストを目的別の15テストへ再設計しました�
 
 外部入力として受け取ったAccount候補をUSER_MODEで一括登録し、入力ごとの結果を返します。
 
+[実装](force-app/main/default/classes/AccountBulkCreateService.cls) · [テスト](force-app/main/default/classes/AccountBulkCreateServiceTest.cls) · [検証結果](evidence/README.md)
+
 - `ALL_OR_NONE`と`PARTIAL_SUCCESS`をenumで明示
 - List内null、既存Id、必須項目不足を区別
 - `Database.insert`をループ外で最大1回実行
@@ -68,6 +70,10 @@ CP5では、既存7テストを目的別の15テストへ再設計しました�
 ### Caseエスカレーション自動化
 
 Caseが「Escalated以外からEscalatedへ」変更された場合に、PriorityをHighへ補正し、確認Taskを作成します。
+
+実装：[Trigger](force-app/main/default/triggers/CaseTrigger.trigger) · [Handler](force-app/main/default/classes/CaseTriggerHandler.cls) · [Service](force-app/main/default/classes/CaseEscalationService.cls) · [共通TriggerHandler](force-app/main/default/classes/TriggerHandler.cls)
+
+確認資料：[Serviceテスト](force-app/main/default/classes/CaseEscalationServiceTest.cls) · [結合テスト](force-app/main/default/classes/CaseTriggerHandlerTest.cls) · [詳細設計](design/CP4_TRIGGER_RECIPES_DESIGN.md) · [検証結果](evidence/README.md)
 
 ```mermaid
 flowchart LR
@@ -155,8 +161,9 @@ flowchart LR
 - Salesforce CLI
 - Salesforce Code Analyzer
 - Git／GitHub／Pull Request
-- ソースAPIバージョン：67.0
-- スクラッチ組織：Developer Edition
+- ソースAPIバージョン：67.0（既存の検証条件を維持。68.0での動作は未検証）
+- Dev Hub：Developer Edition
+- Scratch Org Edition：Developer（`config/project-scratch-def.json`で指定）
 
 ## 再現手順
 
@@ -202,7 +209,7 @@ sf apex run test `
   --result-format human
 ```
 
-組織の季節リリースによるAPIバージョンと、各メタデータのAPIバージョンは分けて確認します。実際の検証条件は各証拠ファイルに記録しています。
+組織の季節リリースと、ソースに指定するAPIバージョンは分けて確認します。公開版の検証状況は[検証サマリー](evidence/README.md)に記載し、元の実行ログは学習環境で管理しています。
 
 ## 学習・開発の進め方
 
@@ -216,15 +223,16 @@ sf apex run test `
 6. 静的解析、証拠整理、振り返りを行う
 7. feature branchからPull Requestを作成し、review後にmainへmergeする
 
-Apex Recipesは参照教材として使用し、このリポジトリの学習コードは公式コードをそのままコピーせず、要件を再設計して実装しています。
+学習用リポジトリではCPごとにfeature branchとPull Requestで変更を管理しています。この公開用リポジトリには、節目ごとに匿名化したスナップショットを反映します。
 
 ## セキュリティと公開範囲
 
-次の情報はリポジトリへ保存しません。
+次の情報は公開リポジトリへ含めません。
 
 - アクセストークン、refresh token、client secret、秘密鍵
-- 認証URL
-- 実ユーザー名やメールアドレス
-- 不要な組織ID、ユーザーID、ローカル絶対パス
+- 認証情報を含むURL
+- Salesforceの実ユーザー名、個人メールアドレス
+- 組織ID、ユーザーID、組織固有URL、ローカル絶対パス
+- Deployment ID、Test Run ID、未加工の実行ログ
 
-証拠として必要なDeployment IDやTest Run IDは残し、それ以外の識別情報はサニタイズしています。
+検証結果は、環境固有の識別情報を除去した[匿名化サマリー](evidence/README.md)として掲載しています。テスト用データには架空の値と`example.com`ドメインを使用します。
