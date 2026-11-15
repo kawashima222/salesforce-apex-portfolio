@@ -4,8 +4,8 @@ Salesforceの運用保守経験を土台に、実務を想定したApex開発を
 
 Apex Recipesを参照教材として、練習要件の設計・実装・テスト・レビュー指摘への修正を自身で行っています。AIは仕様調査・レビュー・ドキュメント整理の支援に利用しています。
 
-- 完了：Collection／SOQL／DML／Trigger／Apex Test
-- 進行中：CP6 Security Recipes
+- 完了：Collection／SOQL／DML／Trigger／Apex Test／Security
+- 次のテーマ：CP7 Invocable Apex
 - 主な検証：200件一括処理、USER_MODE、CRUD・FLS・共有、部分成功、ロールバック、Flow連携、スクラッチ組織への再デプロイ
 
 ## 現在の進捗
@@ -18,10 +18,8 @@ Apex Recipesを参照教材として、練習要件の設計・実装・テス�
 | CP3 | DML Recipes | 完了 | USER_MODE一括insert、全件成功・部分成功、入力別結果、入力不変性 |
 | CP4 | Trigger Recipes | 完了 | 共通TriggerHandler、Caseエスカレーション、Flow再入、Task一括作成 |
 | CP5 | Apexテスト | 完了 | CaseIndexServiceのテストを15件へ再設計し、独立性と具体的Assertを強化 |
-| CP6 | Security Recipes | 進行中 | Account検索を実装・静的レビュー済み。更新処理は設計済み・未実装 |
+| CP6 | Security Recipes | 完了 | Accountの権限付き検索・更新、FLSによる項目除去、入力別の部分成功を検証 |
 | CP7〜CP9 | Invocable／非同期／REST・Callout | 未着手 | CP6完了後に順番に実施 |
-
-CP6のQuery側は12テストを作成済みで、スクラッチ組織での実行確認待ちです。進捗は各CPの完了条件に基づいて管理しています。
 
 ## 代表的な実装
 
@@ -96,6 +94,18 @@ flowchart LR
 - Flow再入時はStatus遷移条件によりTaskの重複作成を防止
 - 200件一括更新とFlowを含む結合テストを実施
 
+### Accountの権限付き検索・更新
+
+**検索**：[実装](force-app/main/default/classes/AccountQueryService.cls) · [テスト](force-app/main/default/classes/AccountQueryServiceTest.cls)
+
+指定IDのうち、ユーザーが参照できるAccountを `WITH USER_MODE` のSOQL 1回で取得します。必須のオブジェクト・項目権限がなければ例外とし、共有で見えないレコードは結果から除きます。
+
+**更新**：[実装](force-app/main/default/classes/AccountUpdateService.cls) · [テスト](force-app/main/default/classes/AccountUpdateServiceTest.cls)
+
+`Security.stripInaccessible(UPDATABLE)` で更新不可項目を除いてから、`USER_MODE` のDML 1回で更新します。元入力は変更せず、除去項目の集合と入力ごとの更新結果を返します。処理は部分成功に対応し、成功は「除去後のレコードのDMLが成功した」ことを示します。
+
+[詳細設計](design/CP6_SECURITY_RECIPES_DESIGN.md) · [更新サービスの設計経緯](design/CP6_ACCOUNT_UPDATE_DESIGN_PROCESS.md) · [検証結果](evidence/README.md#cp6-security-recipes)
+
 ## 設計上の方針
 
 ### バルク対応
@@ -132,6 +142,7 @@ flowchart LR
 | CP3 DML Recipes | 対象20テスト、関連40テスト、実デプロイ、静的解析 |
 | CP4 Trigger Recipes | 関連46テスト、Flowを含むデプロイ、静的解析 |
 | CP5 Apexテスト | 対象15テスト、関連61テスト、組織全体カバレッジ88%、静的解析 |
+| CP6 Security Recipes | 対象29テスト・関連全123テスト合格、実デプロイ9/9、静的解析Critical／High 0件 |
 
 公開版では、テスト件数、カバレッジ、静的解析結果を[匿名化した検証サマリー](evidence/README.md)として掲載しています。Deployment ID、Test Run ID、ユーザー名、組織ID、ローカル絶対パス、未加工ログは公開対象に含めていません。
 
@@ -150,7 +161,7 @@ flowchart LR
 
 - [CP4 Trigger Recipes詳細設計](design/CP4_TRIGGER_RECIPES_DESIGN.md)
 - [CP5 Apexテスト詳細設計](design/CP5_APEX_TESTS_DESIGN.md)
-- [CP6 Security Recipes詳細設計（進行中）](design/CP6_SECURITY_RECIPES_DESIGN.md)
+- [CP6 Security Recipes詳細設計](design/CP6_SECURITY_RECIPES_DESIGN.md)
 
 ## 使用技術・環境
 

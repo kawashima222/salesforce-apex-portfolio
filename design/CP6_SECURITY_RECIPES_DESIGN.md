@@ -23,15 +23,14 @@
 | --- | --- |
 | 対象CP | CP6 Security Recipes |
 | 練習要件 | 実行ユーザーのCRUD・FLS・共有を考慮したAccount参照・更新 |
-| 状態 | Gate B 88%（7/8）・項目8は本人実装と並行確定／Gate C本人実装検討開始・未提出 |
+| 状態 | CP6完了。実装・テスト・検証済み |
 | 作成日 | 2026-10-26 |
-| 最終更新日 | 2026-10-26 |
-| 作業ブランチ | `feature/cp6-security-recipes` |
-| 根拠 | `GOAL_SPEC.md`、`PLAN.md`、`LEARNING_PROGRESS.md`、本人によるGate A・Gate B説明 |
+| 最終更新日 | 2026-11-15 |
+| 検証結果 | [匿名化した検証サマリー](../evidence/README.md#cp6-security-recipes) |
 
-この文書は、本人が現時点までに説明して確定した設計を実装契約として整理する。未回答事項をAIが推測で補完せず、`未確定`または`実測待ち`と明記する。
+この文書は、Accountの検索と更新の実装契約・設計判断・検証結果を整理した公開版である。
 
-本人の希望により、Gate B項目8の最終クラスAPI、DTO配置、計算量、代替案比較、最終リスクは、Gate Cの本人実装と並行して確定する。したがって、この文書は現段階版であり、実装後に設計と実装を再照合して更新する。
+クラスAPI、DTO配置、計算量、代替案、残る制約を実装とスクラッチ組織での実測に照らし合わせた。[CP6の検証証拠](../evidence/README.md#cp6-security-recipes)に実デプロイと回帰テストの結果を記録する。
 
 ## 2. 要件
 
@@ -102,8 +101,8 @@
 | クラス名 | `AccountQueryService` |
 | 可視性 | `public` |
 | sharing | `with sharing` |
-| instance状態 | 持たない想定 |
-| constructor | 未確定。static専用としてprivateにするか、本人実装時に確定する |
+| instance状態 | 持たない |
+| constructor | private。staticメソッドで利用するため、呼出元からのinstance生成を防ぐ |
 
 `with sharing`は、現在のSOQLだけでなく将来クラスへ追加される処理も含めて、実行ユーザーのレコード共有をクラス全体の方針として明示するために採用する。
 
@@ -169,15 +168,17 @@ public static List<Account> findReadableAccountsByIds(Set<Id> accountIds)
 
 ## 5. AccountUpdateService 詳細設計
 
+要件からDTO・メソッド構成を決めた理由は、[AccountUpdateServiceを設計した流れ](CP6_ACCOUNT_UPDATE_DESIGN_PROCESS.md)に記録する。本章は現在の実装契約、別紙は設計に至った経緯として参照する。
+
 ### 5.1 クラス契約
 
 | 項目 | 内容 |
 | --- | --- |
 | クラス名 | `AccountUpdateService` |
-| 可視性 | 未確定。組織内他クラスから利用する前提では`public`候補 |
-| sharing | 未確定。DMLは明示的USER_MODEで共有を適用する |
-| instance状態 | 持たない想定 |
-| constructor | 未確定。static専用としてprivateにするか、本人実装時に確定する |
+| 可視性 | `public`を採用 |
+| sharing | `with sharing`を採用。DMLも明示的USER_MODEで共有を適用する |
+| instance状態 | 持たない |
+| constructor | static専用としてprivateを採用 |
 
 ### 5.2 メソッド契約
 
@@ -223,7 +224,9 @@ public static AccountUpdateResponse updateAccountsWithUpdatableFields(
 | `message` | `String` | `Database.Error.getMessage()` |
 | `fields` | `List<String>` | `Database.Error.getFields()` |
 
-DTOを`AccountUpdateService`のpublic内側クラスにするか、独立publicクラスにするかは未確定である。public変数、プロパティ、constructorのどれで値を設定するかも本人実装と並行して確定する。
+DTOは`AccountUpdateService`のpublic内側クラスとする。このService専用の型を独立クラスへ分散させず、呼出元からは`AccountUpdateService.AccountUpdateResponse`などの型名で参照する。
+
+各項目は`public ... { get; private set; }`のプロパティとし、public constructorで値をまとめて設定する。呼出元からプロパティの再代入はできないが、List・Setの内容まで変更不可とする契約ではない。正常return時の不変条件はServiceが返すDTOに対する保証であり、呼出元がconstructorで任意に作るDTOを検証するものではない。
 
 ### 5.4 正常return時の不変条件
 
@@ -246,10 +249,10 @@ DTOを`AccountUpdateService`のpublic内側クラスにするか、独立public�
 | 空List | 空Responseをreturn | なし | 0／0 |
 | List内の要素がnull | `IllegalArgumentException` | `Account update candidate must not be null. inputIndex={n}` | 0／0 |
 | `Account.Id == null` | `IllegalArgumentException` | `Account.Id must not be null for update operations. inputIndex={n}` | 0／0 |
-| Account以外のId | `IllegalArgumentException` | `Account.Id must belong to the Account object. inputIndex={n}` | 0／0 |
+| Account以外のId | `Account.Id`への代入時に`System.TypeException` | messageに`Invalid id value for this SObject type`を含む | 0／0 |
 | 同じIdが重複 | `IllegalArgumentException` | `Duplicate Account.Id is not allowed. firstInputIndex={first}, duplicateInputIndex={duplicate}` | 0／0 |
 
-全入力の構造検証をDML前に完了する。構造違反がある場合は入力全体を例外として扱い、DBを変更しない。
+全入力の構造検証をDML前に完了する。構造違反がある場合は入力全体を例外として扱い、DBを変更しない。異種Idについては、今回テストした型付き`Account.Id`への代入でService呼出し前に拒否される。Service側のsObjectTypeチェックも防御として残す。
 
 ### 5.6 処理順
 
@@ -283,10 +286,12 @@ DTOを`AccountUpdateService`のpublic内側クラスにするか、独立public�
 | API | `Database.update` |
 | allOrNothing | `false` |
 | accessLevel | `System.AccessLevel.USER_MODE` |
-| DML文数 | 空入力0、非空かつ構造検証通過時1 |
+| DML文数 | 空入力・構造検証例外・strip時のCRUD例外では0。DML到達時は1 |
 | DML行数 | 除去後Listの件数。入力件数と同じ |
 
-成功`SaveResult`は成功Id、`success = true`、空errorsへ変換する。失敗`SaveResult.getId()`は空であるため、失敗結果の`accountId`も元入力`accounts[i].Id`から取得する。
+成功時は`success = true`と空errors、失敗時は`success = false`と全Database.Errorの変換結果を設定する。`accountId`は成功・失敗とも元入力`accounts[i].Id`から取得し、どの入力の結果かを常に同じ方法で特定する。
+
+失敗時の`SaveResult.getId()`が常にnullとは限らない。公式仕様ではAPI 53.0以降は対象Idを返し、更新時のレコードロック失敗ではnullになる。元入力Idを使うことでこの挙動に依存しない。[公式仕様：SaveResult.getId()](https://developer.salesforce.com/docs/platform/apex-ref/references/apex-ref/apex-methods-system-database-saveresult.html)
 
 1つの`SaveResult`に複数の`Database.Error`がある場合、すべてを個別の`AccountUpdateError`へ変換する。
 
@@ -308,7 +313,7 @@ DTOを`AccountUpdateService`のpublic内側クラスにするか、独立public�
 | Apex Class Access | 実際の外部entry point側で管理。内部Service用Permission Setには含めない | 同左 |
 | CRUD | `WITH USER_MODE`でAccount Readをfail-fast | `stripInaccessible(..., true)`とUSER_MODE DMLでAccount Updateを適用 |
 | FLS | `WITH USER_MODE`でSELECT項目をfail-fast | `UPDATABLE`で除去し、removedFieldsで通知。USER_MODE DMLでも適用 |
-| レコード共有 | `with sharing`と`WITH USER_MODE` | USER_MODE DMLで適用。クラスsharingは未確定 |
+| レコード共有 | `with sharing`と`WITH USER_MODE` | `with sharing`を明示し、USER_MODE DMLでも適用 |
 
 ### 6.2 Queryでfail-fastを採用する理由
 
@@ -342,8 +347,9 @@ DTOを`AccountUpdateService`のpublic内側クラスにするか、独立public�
 | `Account_Query_Basic` | Account Read、`AccountNumber` Read |
 | `Account_Query_Without_Number` | Account Read、`AccountNumber` FLSなし |
 | `Account_Update_Safe` | Account Read／Edit、`Phone` Read／Edit、`AccountNumber` Readのみ、`AnnualRevenue` Readのみ |
+| `Account_Update_Without_Phone` | Account Read／Edit、`Phone` Readのみ。Update共有テストの別所有者に割り当てる |
 
-`Account.Name`はpermissionableでない可能性があるため、API 67.0環境で`isPermissionable()`を実測する。falseならName FLS不足の独立テストは作成不能として記録し、テスト対象外とする。
+API 67.0のAccount describeで`Name.permissionable=false`を確認した。NameのFLS不足を独立して設定するテストは対象外とし、AccountNumberでFLS不足を検証する。
 
 ### 7.3 共有設定
 
@@ -372,7 +378,7 @@ DTOを`AccountUpdateService`のpublic内側クラスにするか、独立public�
 
 概念上の配置:
 
-1. `@TestSetup`でRole、User、PermissionSetAssignmentを作成する。
+1. `@TestSetup`でRole未設定のUserとPermissionSetAssignmentを作成する。
 2. 各テストでAccountと入力を準備する。
 3. 対象Userを`System.runAs()`へ渡す。
 4. runAs内で`Test.startTest()`を実行する。
@@ -447,11 +453,12 @@ private static final Id NONEXISTENT_ACCOUNT_ID = '001000000000001';
   - 実在Account Idを1件渡す。
   - QueryExceptionを伝播する。
   - 戻り値なし。
-  - 失敗したSOQLもLimits上は1回の試行として期待する。実測差異があれば更新する。
+  - 2026-10-31のAPI 67.0クラスでの実測は、QueryException送出・SOQL回数差分0・取得行数差分0。旧APIからの仕様変更とまでは断定しない。
 - AccountNumber FLS不足:
   - `Account_Query_Without_Number`だけを付与する。
   - 対象Accountは実行ユーザー所有とし、共有の影響を除外する。
   - Account ReadがあってもSELECT対象AccountNumberのFLS不足によりQueryExceptionを期待する。
+  - 同日のAPI 67.0クラスでの実測は、SOQL回数差分0・取得行数差分0。
 
 ### 8.6 200件
 
@@ -478,7 +485,7 @@ private static final Id NONEXISTENT_ACCOUNT_ID = '001000000000001';
 | 7 | `updateAccountsWithUpdatableFields_withEmptyList_returnsEmptyResponseWithoutDml` | 空Response、DML 0 |
 | 8 | `updateAccountsWithUpdatableFields_containingNull_throwsIllegalArgumentException` | List内null拒否、DML 0 |
 | 9 | `updateAccountsWithUpdatableFields_containingAccountWithoutId_throwsIllegalArgumentException` | Idなし拒否、DML 0 |
-| 10 | `updateAccountsWithUpdatableFields_containingNonAccountId_throwsIllegalArgumentException` | 異種Id拒否、DML 0 |
+| 10 | `assigningNonAccountIdToAccount_throwsTypeExceptionBeforeService` | 型付き`Account.Id`への異種Id代入をService呼出し前に拒否、DML 0 |
 | 11 | `updateAccountsWithUpdatableFields_containingDuplicateId_throwsIllegalArgumentException` | 重複Id拒否、DML 0 |
 | 12 | `updateAccountsWithUpdatableFields_withInaccessibleField_removesFieldAndUpdatesAccessibleFields` | 許可項目だけDB更新 |
 | 13 | `updateAccountsWithUpdatableFields_withRemovedFields_returnsAggregateRemovedFields` | 複数入力の除去項目をResponseへ集約 |
@@ -497,9 +504,10 @@ private static final Id NONEXISTENT_ACCOUNT_ID = '001000000000001';
   - `results.size() == 0`
   - DML文0、行0、DB変更0
 - 構造異常:
-  - 項目5.5の完全messageを確認する。
+- Service内の構造検証は項目5.5の完全messageを確認する。異種Id代入は`TypeException`のmessageに所定の文字列を含むことを確認する。
   - List内nullはinputIndex 1。
-  - Idなし／異種IdはinputIndex 0。
+  - IdなしはinputIndex 0。
+  - 異種Idは`Account.Id`への代入時点で`System.TypeException`となり、Serviceへ到達しない。
   - 重複IdはfirstInputIndex 0、duplicateInputIndex 2。
   - DML文0、行0、DB変更0。
 
@@ -557,14 +565,14 @@ private static final Id NONEXISTENT_ACCOUNT_ID = '001000000000001';
 
 - Phoneへ41文字を設定したAccount 1件を渡す。
 - 結果1件、inputIndex 0、失敗、元入力Id。
-- errors 1件を暫定期待とする。
-- 暫定StatusCodeは`STRING_TOO_LONG`。
-- 暫定fieldsは`Phone`を含む。
+- errors 1件。
+- StatusCodeは`STRING_TOO_LONG`。
+- fieldsは`Phone`を含む。
 - messageは非空。
 - DB上のPhoneは更新前値。
 - DML文1、行1。
 
-StatusCode、fields、エラー件数、messageはAPI 67.0スクラッチ組織で実測し、異なる場合は実測結果を正本へ反映する。
+上記はAPI 67.0のテストで確認済み。message本文の完全一致は契約に含めない。
 
 ### 9.7 共有アクセス不足
 
@@ -573,6 +581,7 @@ StatusCode、fields、エラー件数、messageはAPI 67.0スクラッチ組織�
 - Phone更新候補を1件渡す。
 - メソッドは例外ではなくResponseを返す。
 - 結果1件、失敗、元入力Id、共有アクセス不足のDMLエラー。
+- API 67.0の実測StatusCodeは`INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY`。
 - DB上のPhoneは変更されない。
 - DML文1、行1。
 
@@ -584,7 +593,7 @@ StatusCode、fields、エラー件数、messageはAPI 67.0スクラッチ組織�
 - Responseは返らない。
 - 元入力は変更されない。
 
-例外型はAPI 67.0で実測し、異なる場合は実測結果を正本へ反映する。
+`System.NoAccessException`とDML 0文・0行はAPI 67.0のテストで確認済み。
 
 ### 9.9 200件
 
@@ -618,11 +627,11 @@ StatusCode、fields、エラー件数、messageはAPI 67.0スクラッチ組織�
 
 | 処理 | 空入力 | 非空入力 |
 | --- | ---: | ---: |
-| Query SOQL文 | 0 | 1 |
-| Query rows | 0 | 参照可能かつ存在する一致Account件数 |
+| Query SOQL文 | 0 | 検索成功時1。CRUD／FLS拒否時は実測0 |
+| Query rows | 0 | 参照可能かつ存在する一致Account件数。権限拒否時は実測0 |
 | Update SOQL文 | 0 | 0 |
-| Update DML文 | 0 | 1 |
-| Update DML行 | 0 | DMLへ渡したAccount件数 |
+| Update DML文 | 0 | DMLに到達した場合は1。構造不正・root CRUD不足で実行前に拒否した場合は0 |
+| Update DML行 | 0 | DMLへ渡したAccount件数。レコード単位の失敗分も含む |
 
 1回の想定利用規模は200件とする。ただし、サービス自身に200件の固定上限は設けない。
 
@@ -636,14 +645,13 @@ StatusCode、fields、エラー件数、messageはAPI 67.0スクラッチ組織�
 - 複数バッチの成功・失敗集計
 - Trigger、Flow、他Serviceを含むCPU・ヒープ・SOQL・DML残量の管理
 
-### 10.3 未確定
+### 10.3 計算量・追加ヒープと制限超過例
 
-- Queryの厳密な時間計算量と追加ヒープ量
-- Updateの厳密な時間計算量と追加ヒープ量
-- 入力件数`n`、DMLエラー総数`e`、除去項目数`f`を用いた最終表現
-- 上限到達時の具体例
-
-これらは本人実装後に、実際のList、Set、Map、DTO、helper構成を基に項目8として確定する。
+- Query: 入力Id件数`n`、返却件数`m`。Apexの入力検証は`O(n)`、レコードサイズ一定とした返却Listは`O(m)`。DB側の検索とソート時間は含めない。
+- Update: 入力件数`n`、DMLエラー総数`e`、除去項目名の種類数`f`。`SaveResult`を入力順に走査し、各エラーを合計`e`回処理する結果変換は`O(n + e)`。
+- Updateの追加ヒープは、レコード・エラーサイズ一定の前提で`O(n + e + f)`。重複検証Map、除去後List、`SaveResult`と入力別DTOが`n`、エラー情報が`e`、除去項目集合が`f`に対応する。プラットフォーム内部の実行時間やヒープを断定するものではない。
+- DML行数の残りが300行の同一トランザクションで200件更新を2回実行すると、2回目は残り100行を超える。`allOrNothing=false`でも100件だけ保存する動作にはならず、LimitExceptionで1回目を含めた同一トランザクションのDB変更がロールバックされる。
+- 同一トランザクション内でリストを小分けしても消費枠は共通である。呼出元でトランザクションを分けた場合は、コミット単位も分かれるため、呼出元が結果の集計と再試行を管理する。
 
 ## 11. 設計判断と代替案
 
@@ -658,63 +666,58 @@ StatusCode、fields、エラー件数、messageはAPI 67.0スクラッチ組織�
 | removed fields | Response全体のSet | 実行ユーザーのリクエスト全体で除去されたAccount項目を通知する |
 | Role | 両ユーザーとも未設定 | Role階層による参照経路と組織の既存Roleへの依存を排除する |
 | clone | 不採用 | stripが元入力を変更せず、順序とIdを維持した除去後Listを返す |
+| UpdateのDTO配置 | public内側クラス | このService専用の型としてまとめ、呼出元から参照できる |
+| UpdateのDTO設定 | get／private setとconstructor | 生成時に必要な値を渡し、呼出元のプロパティ再代入を防ぐ |
+| Updateの内部準備結果 | private内側クラス | 除去後Accountと除去項目をまとめて後続処理へ渡す |
 
-### 11.2 項目8で説明を追加する代替案
+### 11.2 代替案と採用理由
 
-- QueryとUpdateを1クラスへまとめる案
-- Queryで`stripInaccessible(READABLE)`を使う案
-- UpdateでUSER_MODE DMLだけを使う案
-- `allOrNothing=true`案
-- removed fieldsを入力ごとに返す案
-- Roleをメタデータ管理する案
-- DTOを独立クラスにする案とService内側クラスにする案
-- public constructorとprivate constructor
+- QueryとUpdateを統合すると、参照時のfail-fastと更新時の除去・部分成功という異なる契約を1クラスで扱う。今回は責務を分離する。
+- Queryの`stripInaccessible(READABLE)`は読めない項目を除いた結果を返せるが、今回は必要項目が欠けた結果を成功として返さず、USER_MODE SOQLでfail-fastにする。
+- UpdateでUSER_MODE DMLだけを使う場合、更新不可項目を含む対象レコードは失敗し、そのレコードの許可項目も更新されない。今回は除去後に許可項目を更新し、除去項目を通知する。
+- `allOrNothing=true`では、同じDML内の1件の失敗でそのDML全体が取り消され、Responseは返らない。今回はレコードごとの成否を返せる`false`を採用する。
+- レコード別の除去情報が必要なら、除去項目を`AccountUpdateItemResult`等へ持たせる。ただし全体集合だけから個別の内訳は復元できないため、入力別の除去情報を取得する処理も必要となる。現要件は全体集合とする。
+- 共有テストはRoleをメタデータとして追加せず、Role未設定と所有者の違いで分離する。DTOはUpdate専用なのでServiceの内側に置く。
+- 両Serviceはstatic専用とし、public constructorで不要なinstance生成を許さず、private constructorを採用する。
+- `with sharing`はクラスのレコード共有方針を明示する。`USER_MODE`は対象DB操作でCRUD・FLS・レコード共有を適用するため、操作ごとに明示する。
 
 ## 12. 未確定事項・実測事項
 
-### 12.1 実装と並行して確定する事項
+### 12.1 確定事項と残る制約
 
-- `AccountUpdateService`のクラス可視性とsharing宣言
-- 両Serviceのconstructor可視性
-- DTOを内側クラス／独立クラスのどちらにするか
-- DTOのpublic変数／プロパティ／constructor設計
-- private helperの分割単位
-- Query／Updateの計算量とヒープ
-- 代替案比較の最終説明
-- 最終リスク整理
+- 両Serviceのクラス宣言・private constructor、DTO配置、計算量、代替案比較は第4・5・10・11章に反映した。
+- 部分成功で扱うのはレコード単位のDMLエラーであり、トランザクション全体の失敗は対象外。入力分割、非同期化、集計、再試行は呼出元で管理する。
+- 除去項目の通知は全体集合。入力別に表示する要件が追加された場合はDTOと除去情報の取得方法を再設計する。
 
 ### 12.2 API 67.0実測事項
 
-- `Account.Name.isPermissionable()`
-- Phone 41文字時のStatusCode、fields、message、エラー件数
-- Account Update CRUD不足時の例外型
-- CRUD／FLS不足QueryException時のLimits Query差分
-- 共有アクセス不足時のStatusCode、fields、message
-- User／PermissionSetAssignmentを`@TestSetup`、Accountを各テストで作る構成のMixed DML実行結果
-- `getRemovedFields()`のAccountキーと返却項目名
+- Account describeで`Name.permissionable=false`、`Phone.length=40`を確認。
+- Phone 41文字は`STRING_TOO_LONG`、エラー1件、fieldsに`Phone`を含み、messageは非空。
+- Account Update CRUD不足は`System.NoAccessException`、DML 0文・0行。
+- CRUD／FLS不足QueryException時のSOQL文数・取得行数差分は各0。API 67.0での観測であり、旧APIとの比較は未実施。
+- 共有アクセス不足は`INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY`を含む失敗結果、DB値は未変更。fields・message本文の完全一致は契約に含めない。
+- User／PermissionSetAssignmentを`@TestSetup`、Accountを各テストで作る構成で対象29テストが成功し、Mixed DMLエラーは発生しなかった。
+- Accountの除去項目名を返し、FLS除去テストで`AccountNumber`と`AnnualRevenue`の集合を確認。
 
-実測値が暫定期待値と異なる場合、テストだけを実測へ合わせず、要件上許容できる差かを判断してこの設計書も更新する。
+実測の根拠は[CP6証拠](../evidence/README.md#cp6-security-recipes)を参照する。
 
 ## 13. 実装・検証状態
 
 | 対象 | 状態 |
 | --- | --- |
-| Gate A本人説明 | 100%・commit `69a0120`確認済み |
-| Gate B項目1〜7 | 確認済み |
-| Gate B項目8 | 未完了・本人実装と並行確定 |
-| `AccountQueryService` | 本人提出・静的レビュー済み。API 67.0コンパイル未確認 |
-| `AccountUpdateService` | 未提出 |
-| DTO | 未提出 |
-| Permission Set | 3件提出。最終静的レビュー・デプロイ未確認 |
-| Role／共有環境 | 2ユーザーともRole未設定の設計へ同期。実動作未確認 |
-| Queryテスト | 12件提出・静的レビュー済み。API 67.0実行未確認 |
-| Updateテスト | 未提出 |
-| API 67.0実測 | 未実施 |
-| デプロイ | 未実施 |
-| 静的解析 | 未実施 |
-| Evidence | 未作成 |
+| `AccountQueryService` | API 67.0で実デプロイ済み、15/16箇所カバー（93.8%） |
+| `AccountUpdateService` | API 67.0で実デプロイ済み、74/76箇所カバー（97.4%） |
+| DTO | public内側3クラス、get／private set、constructor設定を採用。内部準備結果はprivate内側クラス |
+| Permission Set | 4件実デプロイ済み |
+| Role／共有環境 | テストユーザーはRole未設定。Queryの共有除外とUpdateの共有不足を実測確認 |
+| Queryテスト | 12/12成功 |
+| Updateテスト | 17/17成功。異種Idの型境界と、共有不足のStatusCodeを確認 |
+| API 67.0実デプロイ | 2026-11-10、9/9成功、エラー0、`checkOnly=false` |
+| 関連全テスト | `RunLocalTests` 123/123成功、失敗0、カバレッジ警告0 |
+| 静的解析 | Critical／High 0、Moderate 44、Low 34、Info 11。指摘分類済み |
+| 検証サマリー | [匿名化したCP6検証結果](../evidence/README.md#cp6-security-recipes)に掲載 |
 
-Gate Bは88%（7/8）のままである。Gate CはQuery側の本人実装が部分提出されたが、Update側、API 67.0実測、デプロイ、静的解析、Evidence、本人自己確認が未完了である。設計書や静的レビューだけを実行成功の証拠とはしない。
+上記は学習用スクラッチ組織での検証結果。公開版には実行環境を識別する情報や生ログを含めない。
 
 ## 14. 設計判断履歴
 
@@ -729,4 +732,9 @@ Gate Bは88%（7/8）のままである。Gate CはQuery側の本人実装が部
 | 2026-10-26 | Gate B項目8を本人実装と並行して確定する方針へ変更 |
 | 2026-10-30 | Query共有テストをRole未設定へ変更し、Role階層と既存Roleへの依存を排除 |
 | 2026-10-30 | 非存在Idだけと実在Id混在を分離し、Queryテストを12件へ更新。Query本体・テストの静的レビューを完了 |
-
+| 2026-10-31 | Queryの対象12テスト成功を確認。CRUD／FLS不足時のSOQL回数・取得行数差分は0へ更新 |
+| 2026-11-05 | Update本体とDTOをレビューし、API 67.0チェック専用デプロイ成功を確認。Updateテストは未提出 |
+| 2026-11-06 | 提示された設計経緯を[別紙](CP6_ACCOUNT_UPDATE_DESIGN_PROCESS.md)へ保存。DTO配置・プロパティ・helper構成を記録し、SaveResultのIdに関する説明を訂正 |
+| 2026-11-09 | Update 17テスト成功。異種IdのService前拒否と共有不足のStatusCodeを実測し、Assertを追加 |
+| 2026-11-10 | Gate B項目8・Gate Cの本人説明を確認。Gate Dで実デプロイ9/9・関連全テスト123/123・静的解析と証拠保存を確認 |
+| 2026-11-15 | CP6完了 |

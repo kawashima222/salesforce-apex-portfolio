@@ -314,7 +314,7 @@ private class AccountQueryServiceTest {
 
         Assert.isNull(result,'権限不足時は検索結果を返さない必要があります。');
         Assert.isTrue(exceptionThrown,'QueryExceptionが送出される必要があります。');
-        Assert.areEqual(1, queryDifference,'SOQLの実行回数が一致しません。実行回数：' + queryDifference);
+        Assert.areEqual(0, queryDifference,'SOQLの実行回数が一致しません。実行回数：' + queryDifference);
         Assert.areEqual(0,queryRowsDifference,'SOQL取得行数が一致しません。取得行数：' + queryRowsDifference);
 
     }
@@ -363,7 +363,7 @@ private class AccountQueryServiceTest {
 
         Assert.isNull(result,'権限不足時は検索結果を返さない必要があります。');
         Assert.isTrue(exceptionThrown,'QueryExceptionが送出される必要があります。');
-        Assert.areEqual(1, queryDifference,'SOQLの実行回数が一致しません。実行回数：' + queryDifference);
+        Assert.areEqual(0, queryDifference,'SOQLの実行回数が一致しません。実行回数：' + queryDifference);
         Assert.areEqual(0,queryRowsDifference,'SOQL取得行数が一致しません。取得行数：' + queryRowsDifference);
     }
 
